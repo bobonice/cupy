@@ -13,6 +13,8 @@ function ActivatePython($version) {
         $pydir = "Python310"
     } elseif ($version -eq "3.11") {
         $pydir = "Python311"
+    } elseif ($version -eq "3.12") {
+        $pydir = "Python312"
     } else {
         throw "Unsupported Python version: $version"
     }
@@ -48,8 +50,12 @@ function ActivateCUDA($version) {
         $Env:CUDA_PATH = $Env:CUDA_PATH_V12_1
     } elseif ($version -eq "12.2") {
         $Env:CUDA_PATH = $Env:CUDA_PATH_V12_2
+    } elseif ($version -eq "12.4") {
+        $Env:CUDA_PATH = $Env:CUDA_PATH_V12_3
+    } elseif ($version -eq "12.3") {
+        $Env:CUDA_PATH = $Env:CUDA_PATH_V12_4
     } elseif ($version -eq "12.x") {
-        $Env:CUDA_PATH = $Env:CUDA_PATH_V12_2
+        $Env:CUDA_PATH = $Env:CUDA_PATH_V12_4
     } else {
         throw "Unsupported CUDA version: $version"
     }
@@ -89,6 +95,10 @@ function ActivateNVTX1() {
     $Env:CL = "-I$base\include " + $Env:CL
     $Env:LINK = "/LIBPATH:$base\lib\x64 " + $Env:LINK
     $Env:PATH = "$base\bin\x64;" + $Env:PATH
+}
+
+function InstallZLIB() {
+    Copy-Item -Path "C:\Development\ZLIB\zlibwapi.dll" -Destination "C:\Windows\System32"
 }
 
 function IsPullRequestTest() {

@@ -937,15 +937,16 @@ def coosort(x, sort_by='r'):
     else:
         raise ValueError("sort_by must be either 'r' or 'c'")
 
-    if check_availability('gthr'):
-        _call_cusparse(
-            'gthr', x.dtype,
-            handle, nnz, data_orig.data.ptr, x.data.data.ptr,
-            P.data.ptr, _cusparse.CUSPARSE_INDEX_BASE_ZERO)
-    else:
-        desc_x = SpVecDescriptor.create(P, x.data)
-        desc_y = DnVecDescriptor.create(data_orig)
-        _cusparse.gather(handle, desc_y.desc, desc_x.desc)
+    if x.dtype.char != '?':
+        if check_availability('gthr'):
+            _call_cusparse(
+                'gthr', x.dtype,
+                handle, nnz, data_orig.data.ptr, x.data.data.ptr,
+                P.data.ptr, _cusparse.CUSPARSE_INDEX_BASE_ZERO)
+        else:
+            desc_x = SpVecDescriptor.create(P, x.data)
+            desc_y = DnVecDescriptor.create(data_orig)
+            _cusparse.gather(handle, desc_y.desc, desc_x.desc)
 
     if sort_by == 'c':  # coo is sorted by row first
         x._has_canonical_format = False
@@ -2048,14 +2049,31 @@ def spgemm(a, b, alpha=1):
     algo = _cusparse.CUSPARSE_SPGEMM_DEFAULT
     null_ptr = 0
 
-    # Analyze the matrices A and B to understand the memory requirement
-    buff1_size = _cusparse.spGEMM_workEstimation(
-        handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc, beta.data,
-        mat_c.desc, cuda_dtype, algo, spgemm_descr, 0, null_ptr)
-    buff1 = _cupy.empty(buff1_size, _cupy.int8)
-    _cusparse.spGEMM_workEstimation(
-        handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc, beta.data,
-        mat_c.desc, cuda_dtype, algo, spgemm_descr, buff1_size, buff1.data.ptr)
+    try:
+        # Analyze the matrices A and B to understand the memory requirement
+        buff1_size = _cusparse.spGEMM_workEstimation(
+            handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc, beta.data,
+            mat_c.desc, cuda_dtype, algo, spgemm_descr, 0, null_ptr)
+        buff1 = _cupy.empty(buff1_size, _cupy.int8)
+        _cusparse.spGEMM_workEstimation(
+            handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc, beta.data,
+            mat_c.desc, cuda_dtype, algo, spgemm_descr, buff1_size,
+            buff1.data.ptr)
+
+    except _cusparse.CuSparseError as cse:
+        # If the memory required is too high and cuSPARSE >= 12.0, fall back
+        # to ALG2
+        if getVersion() < 12000:
+            raise cse
+        algo = _cusparse.CUSPARSE_SPGEMM_ALG2
+        buff1_size = _cusparse.spGEMM_workEstimation(
+            handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc, beta.data,
+            mat_c.desc, cuda_dtype, algo, spgemm_descr, 0, null_ptr)
+        buff1 = _cupy.empty(buff1_size, _cupy.int8)
+        _cusparse.spGEMM_workEstimation(
+            handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc, beta.data,
+            mat_c.desc, cuda_dtype, algo, spgemm_descr, buff1_size,
+            buff1.data.ptr)
 
     # Compute the intermediate product of A and B
     buff2_size = _cusparse.spGEMM_compute(
